@@ -5,14 +5,18 @@ import pandas as pd
 from mpi4py import MPI
 
 # A = pd.read_csv('data/baseball_features.csv').to_numpy()
-A = np.random.normal(size=(1000, 1000))
-
-k = 10
 
 comm = MPI.COMM_WORLD
 num_procs = comm.Get_size()
 rank = comm.Get_rank()
 
+input = None
+if rank == 0:
+    input = np.random.normal(size=(1000, 1000))
+
+A = comm.scatter([input for _ in range(num_procs)])
+
+k = 10
 def points_per_rank(num_points):
     return int((num_points + num_procs - 1) / num_procs)
 
