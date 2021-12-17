@@ -14,8 +14,9 @@ num_procs = comm.Get_size()
 rank = comm.Get_rank()
 
 input = None
+dim = 1000
 if rank == 0:
-    input = np.random.normal(size=(100, 100))
+    input = np.random.normal(size=(dim, dim))
 
 A = comm.scatter([input for _ in range(num_procs)])
 
@@ -27,12 +28,10 @@ print(f'rank {rank} will handle rows {row_start_index} to {row_end_index}')
 t0 = time.time()
 
 G_cols = np.random.normal(size=(A.shape[1], row_end_index - row_start_index))
-piece = np.zeros((A.shape[0], G_cols.shape[1]))
+piece = np.empty((A.shape[0], G_cols.shape[1]))
 for j in range(G_cols.shape[1]):
-    col = G_cols[:,j]
     for i in range(A.shape[0]):
-        row = A[i,:]
-        piece[i,j] = sum(row[l] * col[l] for l in range(A.shape[0]))
+        piece[i,j] = util.dot(A[i,], G_cols[:,j])
 
 print(time.time() - t0)
 pieces = comm.gather(piece)
@@ -40,7 +39,7 @@ pieces = comm.gather(piece)
 Q = None
 if rank == 0:
     AG = np.column_stack(pieces)
-    Q = np.zeros(AG.shape)
+    Q = np.empty(AG.shape)
 
     for i in range(Q.shape[1]):
         q_i = AG[:, i]
@@ -54,23 +53,27 @@ if rank == 0:
         row_start_index, row_end_index = util.start_end_index(Q_T.shape[0], num_procs, i)
         comm.isend(row_end_index - row_start_index, dest=i, tag=i)
         for row_index in range(row_start_index, row_end_index):
-            comm.isend(Q_T[row_index,], dest=i, tag=i)
+            row_to_send = Q_T[row_index,].copy()
+            comm.Isend([row_to_send, MPI.FLOAT], dest=i, tag=i)
 
+t0 = time.time()
 if rank > 0:
     rows = []
     rows_to_recv = comm.recv(source=0, tag=rank)
-    for _ in range(rows_to_recv):
-        row = comm.recv(source=0, tag=rank)
-        rows.append(row)
-    Q_T_piece = np.vstack(rows)
-    piece = Q_T_piece @ A
+    Q_T_piece = np.empty((rows_to_recv, A.shape[0]))
+    for i in range(rows_to_recv):
+        Q_T_piece[i,] = comm.Recv([Q_T_piece[i,], MPI.FLOAT], source=0, tag=rank)
 elif rank == 0:
     row_start_index, row_end_index = util.start_end_index(Q_T.shape[0], num_procs, 0)
-    piece = Q_T[row_start_index:row_end_index,:] @ A
+    Q_T_piece = Q_T[row_start_index:row_end_index,:]
 
+piece = np.empty((Q_T_piece.shape[0], A.shape[1]))
+for i in range(Q_T_piece.shape[0]):
+    for j in range(A.shape[1]):
+        piece[i, j] = util.dot(Q_T_piece[i,], A[:,j])
+
+print(f'Q_T * A ({Q_T_piece.shape} x {A.shape}): {time.time() - t0}')
 pieces = comm.gather(piece)
 
 if rank == 0:
     Q_T_A = np.concatenate(pieces)
-    print(Q_T_A.shape)
-    print(Q.shape)
