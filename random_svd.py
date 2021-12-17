@@ -1,3 +1,4 @@
+import math
 import time
 
 import numpy as np
@@ -20,6 +21,10 @@ k = 10
 def points_per_rank(num_points):
     return int((num_points + num_procs - 1) / num_procs)
 
+def dot(v1, v2):
+    assert len(v1) == len(v2)
+    return sum(v1[i] * v2[i] for i in range(len(v1)))
+
 cols_per_rank = points_per_rank(k)
 row_start_index = rank * cols_per_rank
 row_end_index = min((rank + 1) * cols_per_rank, k)
@@ -37,18 +42,20 @@ for j in range(G_cols.shape[1]):
 print(time.time() - t0)
 pieces = comm.gather(piece)
 
-
+Q = None
 if rank == 0:
     AG = np.column_stack(pieces)
+    Q = np.zeros(AG.shape)
     print(time.time() - t0)
     print(AG.shape)
 
-    Q = np.zeros(AG.shape)
-    for i in range(1, Q.shape[1]):
+    for i in range(Q.shape[1]):
         q_i = AG[:, i]
         for j in range(0, i):
             q_j = Q[:, j]
-            q_i = q_i - q_i.dot(q_j) * q_j
-        Q[:, i] = q_i / np.sqrt(q_i.dot(q_i))
+            q_i = q_i - dot(q_i, q_j) * q_j
+        Q[:, i] = q_i / math.sqrt(sum(q_i_elmt**2 for q_i_elmt in q_i))
+
+    # print([np.linalg.norm(Q[:, i]) for i in range(Q.shape[1])])
 
 Q = comm.scatter([Q for _ in range(num_procs)])
