@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from mpi4py import MPI
 
+import linear_algebra_funcs
 import util
 
 # A = pd.read_csv('data/baseball_features.csv').to_numpy()
@@ -39,15 +40,7 @@ pieces = comm.gather(piece)
 Q = None
 if rank == 0:
     AG = np.column_stack(pieces)
-    Q = np.empty(AG.shape)
-
-    for i in range(Q.shape[1]):
-        q_i = AG[:, i]
-        for j in range(0, i):
-            q_j = Q[:, j]
-            q_i = q_i - util.dot(q_i, q_j) * q_j
-        Q[:, i] = q_i / math.sqrt(sum(q_i_elmt**2 for q_i_elmt in q_i))
-
+    Q = linear_algebra_funcs.qr_factorization(AG)
     Q_T = Q.transpose()
     for i in range(1, num_procs):
         row_start_index, row_end_index = util.start_end_index(Q_T.shape[0], num_procs, i)
@@ -79,3 +72,5 @@ pieces = comm.gather(piece)
 
 if rank == 0:
     Q_T_A = np.concatenate(pieces)
+
+    # TODO: add SVD(Q_T_A) here
