@@ -73,3 +73,4 @@ pieces = comm.gather(piece)
 if rank == 0:
     Q_T_A = np.concatenate(pieces)
     print(Q_T_A.shape)
+    print(Q.shape)
