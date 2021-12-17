@@ -33,7 +33,7 @@ for j in range(G_cols.shape[1]):
     for i in range(A.shape[0]):
         piece[i,j] = util.dot(A[i,], G_cols[:,j])
 
-print(time.time() - t0)
+print(f'rank {rank} A * G ({A.shape} x {G_cols.shape}): {time.time() - t0}')
 pieces = comm.gather(piece)
 
 Q = None
@@ -57,22 +57,24 @@ if rank == 0:
             comm.Isend([row_to_send, MPI.FLOAT], dest=i, tag=i)
 
 t0 = time.time()
-if rank > 0:
+if rank == 0:
+    row_start_index, row_end_index = util.start_end_index(Q_T.shape[0], num_procs, 0)
+    Q_T_piece = Q_T[row_start_index:row_end_index,:]
+elif rank > 0:
     rows = []
     rows_to_recv = comm.recv(source=0, tag=rank)
     Q_T_piece = np.empty((rows_to_recv, A.shape[0]))
     for i in range(rows_to_recv):
         Q_T_piece[i,] = comm.Recv([Q_T_piece[i,], MPI.FLOAT], source=0, tag=rank)
-elif rank == 0:
-    row_start_index, row_end_index = util.start_end_index(Q_T.shape[0], num_procs, 0)
-    Q_T_piece = Q_T[row_start_index:row_end_index,:]
+
+print(f'rank {rank} Q_T_piece construction ({Q_T_piece.shape}): {time.time() - t0}')
 
 piece = np.empty((Q_T_piece.shape[0], A.shape[1]))
 for i in range(Q_T_piece.shape[0]):
     for j in range(A.shape[1]):
         piece[i, j] = util.dot(Q_T_piece[i,], A[:,j])
 
-print(f'Q_T * A ({Q_T_piece.shape} x {A.shape}): {time.time() - t0}')
+print(f'rank {rank} Q_T * A ({Q_T_piece.shape} x {A.shape}): {time.time() - t0}')
 pieces = comm.gather(piece)
 
 if rank == 0:
