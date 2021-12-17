@@ -42,5 +42,13 @@ if rank == 0:
     AG = np.column_stack(pieces)
     print(time.time() - t0)
     print(AG.shape)
-    # Q, _ = np.linalg.qr(AG)
 
+    Q = np.zeros(AG.shape)
+    for i in range(1, Q.shape[1]):
+        q_i = AG[:, i]
+        for j in range(0, i):
+            q_j = Q[:, j]
+            q_i = q_i - q_i.dot(q_j) * q_j
+        Q[:, i] = q_i / np.sqrt(q_i.dot(q_i))
+
+Q = comm.scatter([Q for _ in range(num_procs)])
