@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from mpi4py import MPI
 
+import util
+
 # A = pd.read_csv('data/baseball_features.csv').to_numpy()
 
 comm = MPI.COMM_WORLD
@@ -13,21 +15,14 @@ rank = comm.Get_rank()
 
 input = None
 if rank == 0:
-    input = np.random.normal(size=(1000, 1000))
+    input = np.random.normal(size=(100, 100))
 
 A = comm.scatter([input for _ in range(num_procs)])
 
 k = 10
-def points_per_rank(num_points):
-    return int((num_points + num_procs - 1) / num_procs)
 
-def dot(v1, v2):
-    assert len(v1) == len(v2)
-    return sum(v1[i] * v2[i] for i in range(len(v1)))
-
-cols_per_rank = points_per_rank(k)
-row_start_index = rank * cols_per_rank
-row_end_index = min((rank + 1) * cols_per_rank, k)
+row_start_index, row_end_index = util.start_end_index(k, num_procs, rank)
+print(f'rank {rank} will handle rows {row_start_index} to {row_end_index}')
 
 t0 = time.time()
 
@@ -46,16 +41,35 @@ Q = None
 if rank == 0:
     AG = np.column_stack(pieces)
     Q = np.zeros(AG.shape)
-    print(time.time() - t0)
-    print(AG.shape)
 
     for i in range(Q.shape[1]):
         q_i = AG[:, i]
         for j in range(0, i):
             q_j = Q[:, j]
-            q_i = q_i - dot(q_i, q_j) * q_j
+            q_i = q_i - util.dot(q_i, q_j) * q_j
         Q[:, i] = q_i / math.sqrt(sum(q_i_elmt**2 for q_i_elmt in q_i))
 
-    # print([np.linalg.norm(Q[:, i]) for i in range(Q.shape[1])])
+    Q_T = Q.transpose()
+    for i in range(1, num_procs):
+        row_start_index, row_end_index = util.start_end_index(Q_T.shape[0], num_procs, i)
+        comm.isend(row_end_index - row_start_index, dest=i, tag=i)
+        for row_index in range(row_start_index, row_end_index):
+            comm.isend(Q_T[row_index,], dest=i, tag=i)
 
-Q = comm.scatter([Q for _ in range(num_procs)])
+if rank > 0:
+    rows = []
+    rows_to_recv = comm.recv(source=0, tag=rank)
+    for _ in range(rows_to_recv):
+        row = comm.recv(source=0, tag=rank)
+        rows.append(row)
+    Q_T_piece = np.vstack(rows)
+    piece = Q_T_piece @ A
+elif rank == 0:
+    row_start_index, row_end_index = util.start_end_index(Q_T.shape[0], num_procs, 0)
+    piece = Q_T[row_start_index:row_end_index,:] @ A
+
+pieces = comm.gather(piece)
+
+if rank == 0:
+    Q_T_A = np.concatenate(pieces)
+    print(Q_T_A.shape)
