@@ -15,7 +15,7 @@ num_procs = comm.Get_size()
 rank = comm.Get_rank()
 
 input = None
-dim = 1000
+dim = 100
 if rank == 0:
     input = np.random.normal(size=(dim, dim))
 
