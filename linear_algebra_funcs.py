@@ -47,40 +47,53 @@ def parallel_matmul(A, B):
             comm.Recv([A_piece[i,], MPI.FLOAT], source=0, tag=rank)
 
     # Calculate a piece of QT_A
-    piece = np.empty((A_piece.shape[0], B.shape[1]))
-    print(A_piece.shape)
+    num_cols = B.shape[1] if len(B.shape) > 1 else 1
+    piece = np.empty((A_piece.shape[0], num_cols))
     for i in range(A_piece.shape[0]):
-        for j in range(B.shape[1]):
-            piece[i, j] = util.dot(A_piece[i,], B[:,j])
+        for j in range(num_cols):
+            if num_cols > 1:
+                piece[i, j] = util.dot(A_piece[i,], B[:,j])
+            else:
+                piece[i] = util.dot(A_piece[i,], B)
             # piece[i, j] = A_piece[i,].dot(B[:,j])
 
     print(f'rank {rank} A_piece construction ({A_piece.shape}): {time.time() - t0}')
 
     pieces = comm.gather(piece)
     if rank == 0:
-        return np.concatenate(pieces)
+        concat = np.concatenate(pieces)
+        if num_cols > 1:
+            return concat
+        return concat[:,0]
 
 
-def power_iteration(A, epsilon=1e-10):
+def parallel_power_method(A, epsilon=1e-10):
     ''' The one-dimensional SVD '''
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    num_procs = comm.Get_size()
 
-    n, m = A.shape
-    x = util.normalize(np.random.normal(size=min(n, m)))
-    prev = None
-    v = x
-
-    if n > m:
-        B = np.dot(A.T, A)
+    A = comm.scatter([A for _ in range(num_procs)])
+    if A.shape[0] > A.shape[1]:
+        B = parallel_matmul(A.transpose(), A)
     else:
-        B = np.dot(A, A.T)
+        B = parallel_matmul(A, A.transpose())
+    B = comm.scatter([B for _ in range(num_procs)])
 
+    v = None
+    if rank == 0:
+        v = util.normalize(np.random.normal(size=min(*A.shape)))
+
+    prev = None
     iterations = 0
     while True:
-        iterations += 1
-        prev = v
-        v = np.dot(B, prev)
-        v = v / sum(elmt**2 for elmt in v)
+        if rank == 0:
+            iterations += 1
+            prev = v
 
-        if abs(np.dot(v, prev)) > 1 - epsilon:
-            print("converged in {} iterations!".format(iterations))
-            return v
+        v = parallel_matmul(B, prev)
+        if rank == 0:
+            v = util.normalize(v)
+            if abs(util.dot(v, prev)) > 1 - epsilon:
+                print("converged in {} iterations!".format(iterations))
+                return v
