@@ -20,18 +20,23 @@ def qr_factorization(A):
     return Q
 
 
-def parallel_matmul(A, B):
+def parallel_matmul(A, B_send_buf):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     num_procs = comm.Get_size()
 
-    B = comm.scatter([B for _ in range(num_procs)])
+    B_dim = None
+    if rank == 0:
+        B_dim = B_send_buf.shape
+    B_dim = comm.scatter([B_dim for _ in range(num_procs)])
+    B = np.empty(shape=B_dim)
+    comm.Scatter(B_send_buf, B)
 
     t0 = time.time()
     if rank == 0:
         for i in range(1, num_procs):
             row_start_index, row_end_index = util.start_end_index(A.shape[0], num_procs, i)
-            print(f'Sending rows {row_start_index} - {row_end_index} to rank {i}')
+            # print(f'Sending rows {row_start_index} - {row_end_index} to rank {i}')
             comm.isend(row_end_index - row_start_index, dest=i, tag=i)
             for row_index in range(row_start_index, row_end_index):
                 row_to_send = A[row_index,].copy()
@@ -57,7 +62,7 @@ def parallel_matmul(A, B):
                 piece[i] = util.dot(A_piece[i,], B)
             # piece[i, j] = A_piece[i,].dot(B[:,j])
 
-    print(f'rank {rank} A_piece construction ({A_piece.shape}): {time.time() - t0}')
+    # print(f'rank {rank} A_piece construction ({A_piece.shape}): {time.time() - t0}')
 
     pieces = comm.gather(piece)
     if rank == 0:
@@ -73,12 +78,14 @@ def parallel_power_method(A, epsilon=1e-10):
     rank = comm.Get_rank()
     num_procs = comm.Get_size()
 
-    A = comm.scatter([A for _ in range(num_procs)])
+    # A = comm.scatter([A for _ in range(num_procs)])
     if A.shape[0] > A.shape[1]:
-        B = parallel_matmul(A.transpose(), A)
+        B_send_buf = parallel_matmul(A.transpose(), A)
+        B = np.empty(shape=(A.shape[1], A.shape[1]))
     else:
-        B = parallel_matmul(A, A.transpose())
-    B = comm.scatter([B for _ in range(num_procs)])
+        B_send_buf = parallel_matmul(A, A.transpose())
+        B = np.empty(shape=(A.shape[0], A.shape[0]))
+    comm.Scatter(B_send_buf, B)
 
     v = None
     if rank == 0:
