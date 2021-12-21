@@ -46,18 +46,15 @@ def parallel_matmul(A, B):
         for i in range(rows_to_recv):
             comm.Recv([A_piece[i,], MPI.FLOAT], source=0, tag=rank)
 
-    print(f'rank {rank} A_piece construction ({A_piece.shape}): {time.time() - t0}')
-
     # Calculate a piece of QT_A
     piece = np.empty((A_piece.shape[0], B.shape[1]))
     print(A_piece.shape)
     for i in range(A_piece.shape[0]):
         for j in range(B.shape[1]):
-            print(f'rank {rank}: {A_piece[i,]} dot {B[:,j]}')
             piece[i, j] = util.dot(A_piece[i,], B[:,j])
             # piece[i, j] = A_piece[i,].dot(B[:,j])
 
-    print(f'rank {rank} piece: {piece}')
+    print(f'rank {rank} A_piece construction ({A_piece.shape}): {time.time() - t0}')
 
     pieces = comm.gather(piece)
     if rank == 0:
