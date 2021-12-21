@@ -28,6 +28,7 @@ print(f'rank {rank} will handle rows {row_start_index} to {row_end_index}')
 
 t0 = time.time()
 
+# Calculate a piece of AG
 G_cols = np.random.normal(size=(A.shape[1], row_end_index - row_start_index))
 piece = np.empty((A.shape[0], G_cols.shape[1]))
 for j in range(G_cols.shape[1]):
@@ -40,7 +41,11 @@ pieces = comm.gather(piece)
 Q = None
 if rank == 0:
     AG = np.column_stack(pieces)
+
+    # Calculate Q, which is not parallelizable
     Q = linear_algebra_funcs.qr_factorization(AG)
+
+    # Send the rows of Q_T to different proceses, which will calculate different pieces of Q_TA
     Q_T = Q.transpose()
     for i in range(1, num_procs):
         row_start_index, row_end_index = util.start_end_index(Q_T.shape[0], num_procs, i)
@@ -49,6 +54,7 @@ if rank == 0:
             row_to_send = Q_T[row_index,].copy()
             comm.Isend([row_to_send, MPI.FLOAT], dest=i, tag=i)
 
+# Calculate which piece of Q_T to calculate a piece of Q_TA with
 t0 = time.time()
 if rank == 0:
     row_start_index, row_end_index = util.start_end_index(Q_T.shape[0], num_procs, 0)
@@ -58,10 +64,11 @@ elif rank > 0:
     rows_to_recv = comm.recv(source=0, tag=rank)
     Q_T_piece = np.empty((rows_to_recv, A.shape[0]))
     for i in range(rows_to_recv):
-        Q_T_piece[i,] = comm.Recv([Q_T_piece[i,], MPI.FLOAT], source=0, tag=rank)
+        comm.Recv([Q_T_piece[i,], MPI.FLOAT], source=0, tag=rank)
 
 print(f'rank {rank} Q_T_piece construction ({Q_T_piece.shape}): {time.time() - t0}')
 
+# Calculate a piece of QT_A
 piece = np.empty((Q_T_piece.shape[0], A.shape[1]))
 for i in range(Q_T_piece.shape[0]):
     for j in range(A.shape[1]):
@@ -70,7 +77,11 @@ for i in range(Q_T_piece.shape[0]):
 print(f'rank {rank} Q_T * A ({Q_T_piece.shape} x {A.shape}): {time.time() - t0}')
 pieces = comm.gather(piece)
 
+t0 = time.time()
+Q_TA = None
 if rank == 0:
-    Q_T_A = np.concatenate(pieces)
+    Q_TA = np.concatenate(pieces)
 
-    # TODO: add SVD(Q_T_A) here
+    # TODO: add SVD(Q_TA) here
+
+Q_TA = comm.scatter([Q_TA for _ in range(num_procs)])
