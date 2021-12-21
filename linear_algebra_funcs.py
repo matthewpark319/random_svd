@@ -7,6 +7,36 @@ import numpy as np
 import util
 
 
+def scatter_matrix(send_buf):
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    num_procs = comm.Get_size()
+    shape = None
+    if rank == 0:
+        shape = send_buf.shape
+    shape = comm.scatter([shape for _ in range(num_procs)])
+    rows = []
+    for i in range(shape[0]):
+        row_to_send = np.row_stack([send_buf[i,].copy() for _ in range(num_procs)]) if rank == 0 else None
+        row_to_recv = np.empty(shape[1])
+        comm.Scatter([row_to_send, MPI.FLOAT], [row_to_recv, MPI.FLOAT])
+        rows.append(row_to_recv)
+    return np.row_stack(rows)
+
+
+def scatter_vector(send_buf):
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    num_procs = comm.Get_size()
+    shape = None
+    if rank == 0:
+        shape = send_buf.shape
+    recv_buf = np.empty(comm.scatter([shape for _ in range(num_procs)]))
+    vectors_to_send = np.row_stack([send_buf.copy() for _ in range(num_procs)]) if rank == 0 else None
+    comm.Scatter([vectors_to_send, MPI.FLOAT], [recv_buf, MPI.FLOAT])
+    return recv_buf
+
+
 def qr_factorization(A):
     Q = np.empty(A.shape)
 
@@ -20,17 +50,15 @@ def qr_factorization(A):
     return Q
 
 
-def parallel_matmul(A, B_send_buf):
+def parallel_matmul(A, B, matrix_vector=False):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     num_procs = comm.Get_size()
 
-    B_dim = None
-    if rank == 0:
-        B_dim = B_send_buf.shape
-    B_dim = comm.scatter([B_dim for _ in range(num_procs)])
-    B = np.empty(shape=B_dim)
-    comm.Scatter(B_send_buf, B)
+    if matrix_vector:
+        B = scatter_vector(B)
+    else:
+        B = scatter_matrix(B)
 
     t0 = time.time()
     if rank == 0:
@@ -52,15 +80,14 @@ def parallel_matmul(A, B_send_buf):
             comm.Recv([A_piece[i,], MPI.FLOAT], source=0, tag=rank)
 
     # Calculate a piece of QT_A
-    num_cols = B.shape[1] if len(B.shape) > 1 else 1
+    num_cols = 1 if matrix_vector else B.shape[1]
     piece = np.empty((A_piece.shape[0], num_cols))
     for i in range(A_piece.shape[0]):
         for j in range(num_cols):
-            if num_cols > 1:
-                piece[i, j] = util.dot(A_piece[i,], B[:,j])
-            else:
+            if matrix_vector:
                 piece[i] = util.dot(A_piece[i,], B)
-            # piece[i, j] = A_piece[i,].dot(B[:,j])
+            else:
+                piece[i, j] = util.dot(A_piece[i,], B[:,j])
 
     # print(f'rank {rank} A_piece construction ({A_piece.shape}): {time.time() - t0}')
 
@@ -81,12 +108,9 @@ def parallel_power_method(A, epsilon=1e-10):
     # A = comm.scatter([A for _ in range(num_procs)])
     if A.shape[0] > A.shape[1]:
         B_send_buf = parallel_matmul(A.transpose(), A)
-        B = np.empty(shape=(A.shape[1], A.shape[1]))
     else:
         B_send_buf = parallel_matmul(A, A.transpose())
-        B = np.empty(shape=(A.shape[0], A.shape[0]))
-    comm.Scatter(B_send_buf, B)
-
+    B = scatter_matrix(B_send_buf)
     v = None
     if rank == 0:
         v = util.normalize(np.random.normal(size=min(*A.shape)))
@@ -98,7 +122,7 @@ def parallel_power_method(A, epsilon=1e-10):
             iterations += 1
             prev = v
 
-        v = parallel_matmul(B, prev)
+        v = parallel_matmul(B, prev, matrix_vector=True)
         if rank == 0:
             v = util.normalize(v)
             if abs(util.dot(v, prev)) > 1 - epsilon:

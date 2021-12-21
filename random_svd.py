@@ -39,21 +39,48 @@ print(f'rank {rank} A * G ({A.shape} x {G_cols.shape}): {time.time() - t0}')
 pieces = comm.gather(piece)
 
 t0 = time.time()
-Q = None
+Q_send_buf = None
 if rank == 0:
     AG = np.column_stack(pieces)
-
     # Calculate Q, which is not parallelizable
-    Q = linear_algebra_funcs.qr_factorization(AG)
+    Q_send_buf = linear_algebra_funcs.qr_factorization(AG)
 
-Q = comm.scatter([Q for _ in range(num_procs)])
+Q = linear_algebra_funcs.scatter_matrix(Q_send_buf)
 
 t0 = time.time()
-Q_TA = linear_algebra_funcs.parallel_matmul(Q.transpose(), A)
-Q_TA = comm.scatter([Q_TA for _ in range(num_procs)])
+print(Q.shape)
+Q_TA_send_buf = linear_algebra_funcs.parallel_matmul(Q.transpose(), A)
+Q_TA = linear_algebra_funcs.scatter_matrix(Q_TA_send_buf)
+
 print(f'Calculated Q_TA in {time.time() - t0}s')
 
 t0 = time.time()
-if rank == 0:
-    # TODO: add SVD(Q_TA) here
-    pass
+Q_TA_reduced = Q_TA.copy()
+sigma_u_v = []
+sigma, u, v = None, None, None
+for i in range(k):
+    if rank == 0:
+        print(f'Starting singular vectors/value {i}')
+    if rank == 0 and u is not None:
+        outer_prod = np.outer(u, v)
+        Q_TA_reduced -= sigma * outer_prod
+
+    sigma, u, v = None, None, None
+    if Q_TA.shape[0] > Q_TA.shape[1]:
+        v = linear_algebra_funcs.parallel_power_method(Q_TA_reduced)
+        u_unnormalized = linear_algebra_funcs.parallel_matmul(Q_TA, v, matrix_vector=True)
+        if rank == 0:
+            sigma = np.linalg.norm(u_unnormalized)  # next singular value
+            u = u_unnormalized / sigma
+    else:
+        transposed = Q_TA_reduced.T
+        u = linear_algebra_funcs.parallel_power_method(transposed)  # next singular vector
+        v_unnormalized = linear_algebra_funcs.parallel_matmul(transposed, u, matrix_vector=True)
+        if rank == 0:
+            sigma = np.linalg.norm(v_unnormalized)  # next singular value
+            v = v_unnormalized / sigma
+
+    sigma_u_v.append((sigma, u, v))
+    print(f'Calculated singular vectors/value {i}')
+
+print(f'Standard SVD algo took: {time.time() - t0}')
