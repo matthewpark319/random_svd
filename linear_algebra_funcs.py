@@ -15,7 +15,6 @@ def scatter_matrix(send_buf):
     if rank == 0:
         matrix_shape = send_buf.shape
     matrix_shape = comm.bcast(matrix_shape)
-    print(f'rank {rank} matrix shape {matrix_shape}')
     rows = []
     for i in range(matrix_shape[0]):
         if rank == 0:
@@ -24,7 +23,6 @@ def scatter_matrix(send_buf):
             row = np.empty(matrix_shape[1])
         comm.Bcast([row, MPI.FLOAT])
         rows.append(row)
-    print(f'rank {rank} scattering matrix and returning')
     return np.row_stack(rows)
 
 
@@ -35,9 +33,9 @@ def scatter_vector(send_buf):
     if rank == 0:
         vector_shape = send_buf.shape[0]
     vector_shape = comm.bcast(vector_shape)
-    print(f'rank {rank} vector shape={vector_shape}')
+    # print(f'rank {rank} vector shape={vector_shape}')
     if rank == 0:
-        vec = send_buf
+        vec = send_buf.copy()
     else:
         vec = np.empty(vector_shape)
     comm.Bcast([vec, MPI.FLOAT])
@@ -101,7 +99,7 @@ def parallel_matmul(A, B, matrix_vector):
     gathered = None
     if rank == 0:
         gathered = np.empty((A.shape[0], B.shape[0 if matrix_vector else 1]))
-    pieces = comm.Gather(piece, gathered)
+    comm.Gather(piece, gathered)
     if rank == 0:
         return gathered[:,0] if matrix_vector else gathered
 
@@ -123,25 +121,22 @@ def parallel_power_method(A, epsilon=1e-10):
         mm_arg2 = A.transpose()
 
     B_send_buf = parallel_matmul(mm_arg1, mm_arg2, matrix_vector=False)
-    print(f'rank {rank} B: {B_send_buf.shape if B_send_buf is not None else None}')
     B = scatter_matrix(B_send_buf)
-    print(f'rank {rank} scattered B: {B.shape}')
-    v = None
+    v_send_buf = None
     if rank == 0:
-        v = util.normalize(np.random.normal(size=min(*A.shape)))
+        v_send_buf = util.normalize(np.random.normal(size=min(*A.shape)))
+    v = scatter_vector(v_send_buf)
 
     prev = None
     iterations = 0
+    converged = False
     while True:
-        if rank == 0:
-            iterations += 1
-            print(f'iteration: {iterations}')
-            prev = v
+        iterations += 1
+        prev = v
 
-        v = parallel_matmul(B, prev, matrix_vector=True)
-        if rank == 0:
-            print(v)
-            v = util.normalize(v)
-            if abs(util.dot(v, prev)) > 1 - epsilon:
-                print("converged in {} iterations!".format(iterations))
-                return v
+        v_send_buf = parallel_matmul(B, prev, matrix_vector=True)
+        v = scatter_vector(v_send_buf)
+        v = util.normalize(v)
+        if abs(util.dot(v, prev)) > 1 - epsilon:
+            print(f"converged in {iterations} iterations!")
+            return v
