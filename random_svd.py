@@ -70,14 +70,14 @@ for i in range(k):
         v = linear_algebra_funcs.parallel_power_method(Q_TA_reduced)
         u_unnormalized = linear_algebra_funcs.parallel_matmul(Q_TA, v, matrix_vector=True)
         if rank == 0:
-            sigma = sum(elmt**2 for elmt in u_unnormalized)
+            sigma = math.sqrt(sum(elmt**2 for elmt in u_unnormalized))
             u = u_unnormalized / sigma
     else:
         transposed = Q_TA_reduced.T
         u = linear_algebra_funcs.parallel_power_method(transposed)  # next singular vector
         v_unnormalized = linear_algebra_funcs.parallel_matmul(transposed, u, matrix_vector=True)
         if rank == 0:
-            sigma = sum(elmt**2 for elmt in v_unnormalized)
+            sigma = math.sqrt(sum(elmt**2 for elmt in v_unnormalized))
             v = v_unnormalized / sigma
 
     if rank == 0:
