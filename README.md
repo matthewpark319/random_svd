@@ -6,7 +6,7 @@ pip install numpy
 pip install mpi4py
 ```
 
-To run the SVD implementation,
+To run the SVD implementation, run this command:
 ```
 mpiexec -np <number_of_processes> python3 randomized_svd.py
 ```
