@@ -5,7 +5,13 @@ Running this code requires python 3.8.10 with installations of numpy 1.19.5 and 
 pip install numpy
 pip install mpi4py
 ```
-To run the randomized SVD implementation, run this command:
+
+To run the SVD implementation,
 ```
 mpiexec -np <number_of_processes> python3 randomized_svd.py
+```
+
+To run the randomized SVD implementation, run this command:
+```
+mpiexec -np <number_of_processes> python3 randomized_svd.py --randomized
 ```
