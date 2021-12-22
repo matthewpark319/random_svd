@@ -87,6 +87,6 @@ if rank == 0:
     U, Sigma, V = [np.array(x) for x in zip(*u_sigma_v)]
     U = U.reshape(U.shape[:2])
     V = V.reshape(V.shape[:2])
-    print(U.shape)
-    print(Sigma.shape)
-    print(V.shape)
+    print(U)
+    print(Sigma)
+    print(V)
