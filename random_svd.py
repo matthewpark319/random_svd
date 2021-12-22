@@ -83,14 +83,21 @@ for i in range(k):
     if rank == 0:
         u_sigma_v.append((u, sigma, v))
 
+U_small = None
 if rank == 0:
     print(f'Standard SVD algo took: {time.time() - t0}')
     U, Sigma, V = [np.array(x) for x in zip(*u_sigma_v)]
-    U = U.reshape(U.shape[:2]).transpose()
+    U_small = U.reshape(U.shape[:2]).transpose()
     V = V.reshape(V.shape[:2]).transpose()
+
+U = linear_algebra_funcs.parallel_matmul(Q, U_small, matrix_vector=False)
+
+if rank == 0:
     print(U)
     print(Sigma)
     print(V)
-    print(f'Q_TA: {Q_TA.shape}')
+    print(f'A: {A.shape}')
+    print(f'reduced A: {Q_TA.shape}')
     print(f'U: {U.shape}')
+    print(f'Sigma: {Sigma.shape}')
     print(f'V: {V.shape}')
