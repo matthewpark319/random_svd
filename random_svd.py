@@ -8,20 +8,20 @@ from mpi4py import MPI
 import linear_algebra_funcs
 import util
 
-# A = pd.read_csv('data/baseball_features.csv').to_numpy()
 
 comm = MPI.COMM_WORLD
 num_procs = comm.Get_size()
 rank = comm.Get_rank()
 
 input = None
-dim = 100
+dim = 10
 if rank == 0:
-    input = np.random.normal(size=(dim, dim))
+    # input = np.random.randint(-10, high=10, size=(dim, dim))
+    input = pd.read_csv('data/baseball_features.csv').to_numpy()[:1000,]
 
 A = linear_algebra_funcs.scatter_matrix(input)
 
-k = 10
+k = int(A.shape[0] / 10)
 
 row_start_index, row_end_index = util.start_end_index(k, num_procs, rank)
 print(f'rank {rank} will handle rows {row_start_index} to {row_end_index}')
@@ -48,7 +48,6 @@ if rank == 0:
 Q = linear_algebra_funcs.scatter_matrix(Q_send_buf)
 
 t0 = time.time()
-print(Q.shape)
 Q_TA_send_buf = linear_algebra_funcs.parallel_matmul(Q.transpose(), A, matrix_vector=False)
 Q_TA = linear_algebra_funcs.scatter_matrix(Q_TA_send_buf)
 
@@ -81,6 +80,5 @@ for i in range(k):
             v = v_unnormalized / sigma
 
     sigma_u_v.append((sigma, u, v))
-    print(f'Calculated singular vectors/value {i}')
 
 print(f'Standard SVD algo took: {time.time() - t0}')

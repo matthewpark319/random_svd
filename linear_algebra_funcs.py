@@ -65,7 +65,6 @@ def parallel_matmul(A, B, matrix_vector):
     else:
         B = scatter_matrix(B)
 
-    print(f'Rank {rank} starting matrix_vector={matrix_vector}, B.shape={B.shape}')
     t0 = time.time()
     if rank == 0:
         for i in range(1, num_procs):
@@ -85,7 +84,7 @@ def parallel_matmul(A, B, matrix_vector):
         for i in range(rows_to_recv):
             comm.Recv([A_piece[i,], MPI.FLOAT], source=0, tag=rank)
 
-    print(f'rank {rank} A_piece construction {A_piece.shape}x{B.shape}: {time.time() - t0},  matrix_vector={matrix_vector}')
+    # print(f'rank {rank} A_piece construction {A_piece.shape}x{B.shape}: {time.time() - t0},  matrix_vector={matrix_vector}')
     # Calculate a piece of QT_A
     num_cols = 1 if matrix_vector else B.shape[1]
     piece = np.empty((A_piece.shape[0], num_cols))
@@ -96,12 +95,9 @@ def parallel_matmul(A, B, matrix_vector):
             else:
                 piece[i, j] = util.dot(A_piece[i,], B[:,j])
 
-    gathered = None
+    pieces = comm.gather(piece)
     if rank == 0:
-        gathered = np.empty((A.shape[0], B.shape[0 if matrix_vector else 1]))
-    comm.Gather(piece, gathered)
-    if rank == 0:
-        return gathered[:,0] if matrix_vector else gathered
+        return np.concatenate(pieces)
 
 
 def parallel_power_method(A, epsilon=1e-10):
@@ -133,10 +129,14 @@ def parallel_power_method(A, epsilon=1e-10):
     while True:
         iterations += 1
         prev = v
+        if rank == 0:
+            # print(f'iterations: {iterations}')
+            pass
 
         v_send_buf = parallel_matmul(B, prev, matrix_vector=True)
+        if rank == 0:
+            v_send_buf = util.normalize(v_send_buf)
         v = scatter_vector(v_send_buf)
-        v = util.normalize(v)
         if abs(util.dot(v, prev)) > 1 - epsilon:
             print(f"converged in {iterations} iterations!")
             return v
