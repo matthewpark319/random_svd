@@ -11,30 +11,37 @@ def scatter_matrix(send_buf):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     num_procs = comm.Get_size()
-    shape = None
+    matrix_shape = (None, None)
     if rank == 0:
-        shape = send_buf.shape
-    shape = comm.scatter([shape for _ in range(num_procs)])
+        matrix_shape = send_buf.shape
+    matrix_shape = comm.bcast(matrix_shape)
+    print(f'rank {rank} matrix shape {matrix_shape}')
     rows = []
-    for i in range(shape[0]):
-        row_to_send = np.row_stack([send_buf[i,].copy() for _ in range(num_procs)]) if rank == 0 else None
-        row_to_recv = np.empty(shape[1])
-        comm.Scatter([row_to_send, MPI.FLOAT], [row_to_recv, MPI.FLOAT])
-        rows.append(row_to_recv)
+    for i in range(matrix_shape[0]):
+        if rank == 0:
+            row = send_buf[i,].copy()
+        else:
+            row = np.empty(matrix_shape[1])
+        comm.Bcast([row, MPI.FLOAT])
+        rows.append(row)
+    print(f'rank {rank} scattering matrix and returning')
     return np.row_stack(rows)
 
 
 def scatter_vector(send_buf):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    num_procs = comm.Get_size()
-    shape = None
+    vector_shape = 0
     if rank == 0:
-        shape = send_buf.shape
-    recv_buf = np.empty(comm.scatter([shape for _ in range(num_procs)]))
-    vectors_to_send = np.row_stack([send_buf.copy() for _ in range(num_procs)]) if rank == 0 else None
-    comm.Scatter([vectors_to_send, MPI.FLOAT], [recv_buf, MPI.FLOAT])
-    return recv_buf
+        vector_shape = send_buf.shape[0]
+    vector_shape = comm.bcast(vector_shape)
+    print(f'rank {rank} vector shape={vector_shape}')
+    if rank == 0:
+        vec = send_buf
+    else:
+        vec = np.empty(vector_shape)
+    comm.Bcast([vec, MPI.FLOAT])
+    return vec
 
 
 def qr_factorization(A):
@@ -50,7 +57,7 @@ def qr_factorization(A):
     return Q
 
 
-def parallel_matmul(A, B, matrix_vector=False):
+def parallel_matmul(A, B, matrix_vector):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     num_procs = comm.Get_size()
@@ -60,6 +67,7 @@ def parallel_matmul(A, B, matrix_vector=False):
     else:
         B = scatter_matrix(B)
 
+    print(f'Rank {rank} starting matrix_vector={matrix_vector}, B.shape={B.shape}')
     t0 = time.time()
     if rank == 0:
         for i in range(1, num_procs):
@@ -79,6 +87,7 @@ def parallel_matmul(A, B, matrix_vector=False):
         for i in range(rows_to_recv):
             comm.Recv([A_piece[i,], MPI.FLOAT], source=0, tag=rank)
 
+    print(f'rank {rank} A_piece construction {A_piece.shape}x{B.shape}: {time.time() - t0},  matrix_vector={matrix_vector}')
     # Calculate a piece of QT_A
     num_cols = 1 if matrix_vector else B.shape[1]
     piece = np.empty((A_piece.shape[0], num_cols))
@@ -89,14 +98,12 @@ def parallel_matmul(A, B, matrix_vector=False):
             else:
                 piece[i, j] = util.dot(A_piece[i,], B[:,j])
 
-    # print(f'rank {rank} A_piece construction ({A_piece.shape}): {time.time() - t0}')
-
-    pieces = comm.gather(piece)
+    gathered = None
     if rank == 0:
-        concat = np.concatenate(pieces)
-        if num_cols > 1:
-            return concat
-        return concat[:,0]
+        gathered = np.empty((A.shape[0], B.shape[0 if matrix_vector else 1]))
+    pieces = comm.Gather(piece, gathered)
+    if rank == 0:
+        return gathered[:,0] if matrix_vector else gathered
 
 
 def parallel_power_method(A, epsilon=1e-10):
@@ -106,11 +113,19 @@ def parallel_power_method(A, epsilon=1e-10):
     num_procs = comm.Get_size()
 
     # A = comm.scatter([A for _ in range(num_procs)])
-    if A.shape[0] > A.shape[1]:
-        B_send_buf = parallel_matmul(A.transpose(), A)
-    else:
-        B_send_buf = parallel_matmul(A, A.transpose())
+    B_send_buf = None
+    mm_arg1, mm_arg2 = None, None
+    if rank == 0 and A.shape[0] > A.shape[1]:
+        mm_arg1 = A.transpose()
+        mm_arg2 = A
+    elif rank == 0:
+        mm_arg1 = A
+        mm_arg2 = A.transpose()
+
+    B_send_buf = parallel_matmul(mm_arg1, mm_arg2, matrix_vector=False)
+    print(f'rank {rank} B: {B_send_buf.shape if B_send_buf is not None else None}')
     B = scatter_matrix(B_send_buf)
+    print(f'rank {rank} scattered B: {B.shape}')
     v = None
     if rank == 0:
         v = util.normalize(np.random.normal(size=min(*A.shape)))
@@ -120,10 +135,12 @@ def parallel_power_method(A, epsilon=1e-10):
     while True:
         if rank == 0:
             iterations += 1
+            print(f'iteration: {iterations}')
             prev = v
 
         v = parallel_matmul(B, prev, matrix_vector=True)
         if rank == 0:
+            print(v)
             v = util.normalize(v)
             if abs(util.dot(v, prev)) > 1 - epsilon:
                 print("converged in {} iterations!".format(iterations))

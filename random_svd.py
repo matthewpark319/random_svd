@@ -19,7 +19,7 @@ dim = 100
 if rank == 0:
     input = np.random.normal(size=(dim, dim))
 
-A = comm.scatter([input for _ in range(num_procs)])
+A = linear_algebra_funcs.scatter_matrix(input)
 
 k = 10
 
@@ -49,7 +49,7 @@ Q = linear_algebra_funcs.scatter_matrix(Q_send_buf)
 
 t0 = time.time()
 print(Q.shape)
-Q_TA_send_buf = linear_algebra_funcs.parallel_matmul(Q.transpose(), A)
+Q_TA_send_buf = linear_algebra_funcs.parallel_matmul(Q.transpose(), A, matrix_vector=False)
 Q_TA = linear_algebra_funcs.scatter_matrix(Q_TA_send_buf)
 
 print(f'Calculated Q_TA in {time.time() - t0}s')
