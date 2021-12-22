@@ -16,7 +16,7 @@ rank = comm.Get_rank()
 
 input = None
 if rank == 0:
-    input = pd.read_csv('data/baseball_features.csv').to_numpy()[:1000,]
+    input = pd.read_csv('data.csv').to_numpy()[:1000,]
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-r', '--randomized', action='store_true', default=False)
