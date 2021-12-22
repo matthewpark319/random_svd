@@ -86,8 +86,8 @@ for i in range(k):
 if rank == 0:
     print(f'Standard SVD algo took: {time.time() - t0}')
     U, Sigma, V = [np.array(x) for x in zip(*u_sigma_v)]
-    U = U.reshape(U.shape[:2])
-    V = V.reshape(V.shape[:2])
+    U = U.reshape(U.shape[:2]).transpose()
+    V = V.reshape(V.shape[:2]).transpose()
     print(U)
     print(Sigma)
     print(V)
