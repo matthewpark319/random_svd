@@ -33,7 +33,6 @@ def scatter_vector(send_buf):
     if rank == 0:
         vector_shape = send_buf.shape[0]
     vector_shape = comm.bcast(vector_shape)
-    # print(f'rank {rank} vector shape={vector_shape}')
     if rank == 0:
         vec = send_buf.copy()
     else:
@@ -77,7 +76,7 @@ def parallel_matmul(A, B, matrix_vector):
 
         row_start_index, row_end_index = util.start_end_index(A.shape[0], num_procs, 0)
         A_piece = A[row_start_index:row_end_index,:]
-    else: # Calculate which piece of A to calculate a piece of AA with
+    else: # Put together piece of A to calculate a piece of AB with
         rows = []
         rows_to_recv = comm.recv(source=0, tag=rank)
         A_piece = np.empty((rows_to_recv, B.shape[0]))
@@ -106,7 +105,6 @@ def parallel_power_method(A, epsilon=1e-10):
     rank = comm.Get_rank()
     num_procs = comm.Get_size()
 
-    # A = comm.scatter([A for _ in range(num_procs)])
     B_send_buf = None
     mm_arg1, mm_arg2 = None, None
     if rank == 0 and A.shape[0] > A.shape[1]:
@@ -130,7 +128,6 @@ def parallel_power_method(A, epsilon=1e-10):
         iterations += 1
         prev = v
         if rank == 0:
-            # print(f'iterations: {iterations}')
             pass
 
         v_send_buf = parallel_matmul(B, prev, matrix_vector=True)

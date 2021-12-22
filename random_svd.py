@@ -53,6 +53,7 @@ Q_TA = linear_algebra_funcs.scatter_matrix(Q_TA_send_buf)
 
 print(f'Calculated Q_TA in {time.time() - t0}s')
 
+# Run standard SVD algorithm
 t0 = time.time()
 Q_TA_reduced = Q_TA.copy()
 u_sigma_v = []
@@ -69,14 +70,14 @@ for i in range(k):
         v = linear_algebra_funcs.parallel_power_method(Q_TA_reduced)
         u_unnormalized = linear_algebra_funcs.parallel_matmul(Q_TA, v, matrix_vector=True)
         if rank == 0:
-            sigma = np.linalg.norm(u_unnormalized)  # next singular value
+            sigma = sum(elmt**2 for elmt in u_unnormalized)
             u = u_unnormalized / sigma
     else:
         transposed = Q_TA_reduced.T
         u = linear_algebra_funcs.parallel_power_method(transposed)  # next singular vector
         v_unnormalized = linear_algebra_funcs.parallel_matmul(transposed, u, matrix_vector=True)
         if rank == 0:
-            sigma = np.linalg.norm(v_unnormalized)  # next singular value
+            sigma = sum(elmt**2 for elmt in v_unnormalized)
             v = v_unnormalized / sigma
 
     if rank == 0:
@@ -90,3 +91,6 @@ if rank == 0:
     print(U)
     print(Sigma)
     print(V)
+    print(f'Q_TA: {Q_TA.shape}')
+    print(f'U: {U.shape}')
+    print(f'V: {V.shape}')
