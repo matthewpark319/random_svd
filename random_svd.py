@@ -21,7 +21,7 @@ if rank == 0:
 
 A = linear_algebra_funcs.scatter_matrix(input)
 
-k = int(A.shape[0] / 10)
+k = int(A.shape[0] / 20)
 
 row_start_index, row_end_index = util.start_end_index(k, num_procs, rank)
 print(f'rank {rank} will handle rows {row_start_index} to {row_end_index}')
@@ -55,7 +55,7 @@ print(f'Calculated Q_TA in {time.time() - t0}s')
 
 t0 = time.time()
 Q_TA_reduced = Q_TA.copy()
-sigma_u_v = []
+u_sigma_v = []
 sigma, u, v = None, None, None
 for i in range(k):
     if rank == 0:
@@ -79,6 +79,14 @@ for i in range(k):
             sigma = np.linalg.norm(v_unnormalized)  # next singular value
             v = v_unnormalized / sigma
 
-    sigma_u_v.append((sigma, u, v))
+    if rank == 0:
+        u_sigma_v.append((u, sigma, v))
 
-print(f'Standard SVD algo took: {time.time() - t0}')
+if rank == 0:
+    print(f'Standard SVD algo took: {time.time() - t0}')
+    U, Sigma, V = [np.array(x) for x in zip(*u_sigma_v)]
+    U = U.reshape(U.shape[:2])
+    V = V.reshape(V.shape[:2])
+    print(U.shape)
+    print(Sigma.shape)
+    print(V.shape)

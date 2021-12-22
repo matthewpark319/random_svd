@@ -138,5 +138,6 @@ def parallel_power_method(A, epsilon=1e-10):
             v_send_buf = util.normalize(v_send_buf)
         v = scatter_vector(v_send_buf)
         if abs(util.dot(v, prev)) > 1 - epsilon:
-            print(f"converged in {iterations} iterations!")
+            if rank == 0:
+                print(f"converged in {iterations} iterations!")
             return v
